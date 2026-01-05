@@ -22,6 +22,8 @@ const char* anwbApiUrl = "https://api.anwb.nl/energy/energy-services/v2/tarieven
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
 
+WiFiServer infoServer(10022);
+
 typedef uint hour_t;
 
 typedef struct hourprice {
@@ -128,10 +130,8 @@ void setup() {
   pinMode(RELAIS_PIN, OUTPUT);
   digitalWrite(RELAIS_PIN, RELAIS_OFF);
 
-
   // Initialize serial communication for debugging
   Serial.begin(115200);
-  return;
   delay(10);
   Serial.println();
   Serial.print("Connecting to ");
@@ -153,6 +153,9 @@ void setup() {
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
 
+  infoServer.begin();
+  infoServer.setNoDelay(true);
+
   timeClient.begin();
   timeClient.update();
 
@@ -164,10 +167,10 @@ void setup() {
     Serial.print(".");
   }
 
-  fetchEnergyPrices();
+  // fetchEnergyPrices();
 }
 
-float readVoltage() {
+float measureVoltage() {
   int rawValue = -120;
   for (int i = 0; i < 10; i++) {
     rawValue += analogRead(MEASUREMENT_PIN);
@@ -178,7 +181,7 @@ float readVoltage() {
 
 void cheapHourStarted() {
   // digitalWrite(RELAIS_PIN, RELAIS_ON);
-  // float voltage = readVoltage();
+  // float voltage = measureVoltage();
   // digitalWrite(RELAIS_PIN, RELAIS_OFF);
 }
 
@@ -192,6 +195,29 @@ void onNewHour(hour_t currentHour) {
   // call expensiveHourStarted on most expensive hour
 }
 
+void handleInfoConnection(WiFiClient client) {
+  client.print("lastHandledHour: ");
+  client.println(lastHandledHour);
+
+  client.print("getCurrentHour: ");
+  client.println(getCurrentHour());
+
+  client.print("MAX_PRICES: ");
+  client.println(MAX_PRICES);
+
+  client.print("measureVoltage: ");
+  client.println(measureVoltage());
+
+  client.println("hourlyPrices: ");
+  for (int i = 0; i < MAX_PRICES; i++) {
+    client.print(i);
+    client.print(" ");
+    client.print(hourlyPrices[i].hour);
+    client.print(" ");
+    client.println(hourlyPrices[i].price);
+  }
+}
+
 void loop() {
   timeClient.update();
 
@@ -199,6 +225,12 @@ void loop() {
   if (currentHour != lastHandledHour) {
     lastHandledHour = currentHour;
     onNewHour(currentHour);
+  }
+
+  if (infoServer.hasClient()) {
+    WiFiClient infoClient = infoServer.accept();
+    handleInfoConnection(infoClient);
+    infoClient.stop();
   }
 
   delay(1000);
