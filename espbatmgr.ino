@@ -1,0 +1,192 @@
+#include <ESP8266WiFi.h>
+#include <WiFiUdp.h>
+#include <NTPClient.h>
+#include <ESP8266HTTPClient.h>
+#include <ArduinoJson.h>
+#include <math.h>
+#include <time.h>
+#include "wificreds.h"
+
+const int RELAIS_PIN = D1; // green on D1, blue on GND, purple on VV
+const int RELAIS_ON = LOW;
+const int RELAIS_OFF = HIGH;
+
+const int LED_PIN = D4; // built-in LED, on when LOW and off when HIGH
+const int LED_ON = LOW;
+const int LED_OFF = HIGH;
+
+const int MEASUREMENT_PIN = A0; // voltage measurement
+
+const char* anwbApiUrl = "https://api.anwb.nl/energy/energy-services/v2/tarieven/electricity?interval=HOUR";
+
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP);
+
+typedef uint hour_t;
+
+typedef struct hourprice {
+  float price;
+  hour_t hour;
+} hourprice_t;
+
+const int MAX_PRICES = 50;
+hourprice_t hourlyPrices[MAX_PRICES];
+
+int months_lengths[2][12] = {
+  {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31},
+  {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
+};
+
+hour_t parseIsoDateTime(String datetime) {
+  // 2025-12-13T23:00:00.000Z
+  int year = datetime.substring(0, 4).toInt();
+  int month = datetime.substring(5, 7).toInt();
+  int day = datetime.substring(8, 10).toInt();
+  int hour = datetime.substring(11, 13).toInt();
+
+  bool is_leap_year = year % 4 == 0;
+  int days = 365 * (year - 1970) + (year - 1969) / 4;
+  for (int m = 0; m < month - 1; m++) {
+    days += months_lengths[is_leap_year][m];
+  }
+  days += day - 1;
+  return days * 24 + hour;
+}
+
+hour_t currentHour() {
+  return timeClient.getEpochTime() / 3600;
+}
+
+String formatTimeForApi(time_t epochTime) {
+  struct tm *ptm = gmtime(&epochTime);
+  
+  char buffer[25];
+  strftime(buffer, 25, "%Y-%m-%dT%H:%M:00.000Z", ptm);
+  return String(buffer);
+}
+
+void fetchEnergyPrices() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (!timeClient.isTimeSet()) return;
+
+  // 1. Determine current UTC time to calculate offsets
+  time_t nowUtc = timeClient.getEpochTime();
+  
+  // Clean the current hour (e.g., 14:25 becomes 14:00) to align with array index 0
+  time_t startOfCurrentHourUtc = (nowUtc / 3600) * 3600;
+
+  // 2. Prepare API Request (Fetching 48 hours of data)
+  String startDate = formatTimeForApi(startOfCurrentHourUtc);
+  String endDate = formatTimeForApi(startOfCurrentHourUtc + (48 * 3600));
+  String fullUrl = String(anwbApiUrl) + "&startDate=" + startDate + "&endDate=" + endDate;
+  Serial.println(fullUrl);
+
+  HTTPClient http;
+  WiFiClientSecure client;
+  client.setInsecure();
+  
+  http.begin(client, fullUrl);
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK) {
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, http.getString());
+
+    if (!error) {
+      // Initialize array with NAN before filling
+      for (int i = 0; i < MAX_PRICES; i++) {
+        hourlyPrices[i].price = NAN;
+        hourlyPrices[i].hour = 0;
+      }
+
+      int index = 0;
+      JsonArray dataArray = doc["data"].as<JsonArray>();
+      for (JsonObject dataPoint : dataArray) {
+        hourlyPrices[index].hour = parseIsoDateTime(dataPoint["date"]);
+        hourlyPrices[index].price = dataPoint["values"]["marktprijs"].as<float>();
+
+        Serial.print("EUR");
+        Serial.print(hourlyPrices[index].price);
+        Serial.print(" for hour ");
+        Serial.println(hourlyPrices[index].hour);
+
+        index += 1;
+        if (index >= MAX_PRICES) break;
+      }
+      Serial.println("Price array updated for the next 48 hours.");
+    }
+  }
+  http.end();
+}
+
+void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LED_OFF);
+
+  pinMode(RELAIS_PIN, OUTPUT);
+  digitalWrite(RELAIS_PIN, RELAIS_OFF);
+
+
+  // Initialize serial communication for debugging
+  Serial.begin(115200);
+  return;
+  delay(10);
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  // Set the ESP8266 to be a Wi-Fi station (client)
+  WiFi.begin(ssid, password);
+
+  // Wait for the connection to establish
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(100);
+    digitalWrite(LED_PIN, LED_ON);
+    delay(100);
+    digitalWrite(LED_PIN, LED_OFF);
+    Serial.print(".");
+  }
+
+  Serial.println("WiFi connected successfully!");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+
+  timeClient.begin();
+  timeClient.update();
+
+  while (!timeClient.isTimeSet()) {
+    delay(50);
+    digitalWrite(LED_PIN, LED_ON);
+    delay(50);
+    digitalWrite(LED_PIN, LED_OFF);
+    Serial.print(".");
+  }
+
+  fetchEnergyPrices();
+}
+
+float readVoltage() {
+  int rawValue = -120;
+  for (int i = 0; i < 10; i++) {
+    rawValue += analogRead(MEASUREMENT_PIN);
+    delay(1);
+  }
+  return rawValue * 0.00233;
+}
+
+void loop() {
+  // timeClient.update();
+  // Serial.println(timeClient.getFormattedTime());
+
+  delay(1000);
+  digitalWrite(LED_PIN, LED_ON);
+  // digitalWrite(RELAIS_PIN, RELAIS_ON);
+  float voltage = readVoltage();
+  Serial.println(voltage);
+
+  delay(1000);
+  digitalWrite(LED_PIN, LED_OFF);
+  // digitalWrite(RELAIS_PIN, RELAIS_OFF);
+  voltage = readVoltage();
+  Serial.println(voltage);
+}
