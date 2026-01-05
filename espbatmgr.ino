@@ -29,6 +29,8 @@ typedef struct hourprice {
   hour_t hour;
 } hourprice_t;
 
+hour_t lastHandledHour = 0;
+
 const int MAX_PRICES = 50;
 hourprice_t hourlyPrices[MAX_PRICES];
 
@@ -53,7 +55,7 @@ hour_t parseIsoDateTime(String datetime) {
   return days * 24 + hour;
 }
 
-hour_t currentHour() {
+hour_t getCurrentHour() {
   return timeClient.getEpochTime() / 3600;
 }
 
@@ -174,19 +176,33 @@ float readVoltage() {
   return rawValue * 0.00233;
 }
 
+void cheapHourStarted() {
+  // digitalWrite(RELAIS_PIN, RELAIS_ON);
+  // float voltage = readVoltage();
+  // digitalWrite(RELAIS_PIN, RELAIS_OFF);
+}
+
+void expensiveHourStarted() {
+  // discharge batteries
+}
+
+void onNewHour(hour_t currentHour) {
+  // call fetchEnergyPrices if necessary
+  // call cheapHourStarted on cheapest hour
+  // call expensiveHourStarted on most expensive hour
+}
+
 void loop() {
-  // timeClient.update();
-  // Serial.println(timeClient.getFormattedTime());
+  timeClient.update();
+
+  hour_t currentHour = getCurrentHour();
+  if (currentHour != lastHandledHour) {
+    lastHandledHour = currentHour;
+    onNewHour(currentHour);
+  }
 
   delay(1000);
   digitalWrite(LED_PIN, LED_ON);
-  // digitalWrite(RELAIS_PIN, RELAIS_ON);
-  float voltage = readVoltage();
-  Serial.println(voltage);
-
   delay(1000);
   digitalWrite(LED_PIN, LED_OFF);
-  // digitalWrite(RELAIS_PIN, RELAIS_OFF);
-  voltage = readVoltage();
-  Serial.println(voltage);
 }
