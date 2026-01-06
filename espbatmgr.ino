@@ -2,6 +2,7 @@
 #include <WiFiUdp.h>
 #include <NTPClient.h>
 #include <ESP8266HTTPClient.h>
+#include <ESP8266mDNS.h>
 #include <ArduinoJson.h>
 #include <math.h>
 #include <time.h>
@@ -67,6 +68,17 @@ String formatTimeForApi(time_t epochTime) {
   char buffer[25];
   strftime(buffer, 25, "%Y-%m-%dT%H:%M:00.000Z", ptm);
   return String(buffer);
+}
+
+int countFutureHours() {
+  int hourCount = 0;
+  hour_t currentHour = getCurrentHour();
+  for (int i = 0; i < MAX_PRICES; i++) {
+    if (hourlyPrices[i].hour > currentHour) {
+      hourCount++;
+    }
+  }
+  return hourCount;
 }
 
 void fetchEnergyPrices() {
@@ -159,6 +171,8 @@ void setup() {
   timeClient.begin();
   timeClient.update();
 
+  MDNS.begin("espbatmgr");
+
   while (!timeClient.isTimeSet()) {
     delay(50);
     digitalWrite(LED_PIN, LED_ON);
@@ -208,6 +222,9 @@ void handleInfoConnection(WiFiClient client) {
   client.print("measureVoltage: ");
   client.println(measureVoltage());
 
+  client.print("countFutureHours: ");
+  client.println(countFutureHours());
+
   client.println("hourlyPrices: ");
   for (int i = 0; i < MAX_PRICES; i++) {
     client.print(i);
@@ -220,6 +237,7 @@ void handleInfoConnection(WiFiClient client) {
 
 void loop() {
   timeClient.update();
+  MDNS.update();
 
   hour_t currentHour = getCurrentHour();
   if (currentHour != lastHandledHour) {
