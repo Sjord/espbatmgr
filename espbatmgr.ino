@@ -26,13 +26,16 @@ NTPClient timeClient(ntpUDP);
 WiFiServer infoServer(10022);
 
 typedef uint hour_t;
+typedef int price_t;
+#define INVALID_PRICE INT_MIN
 
 typedef struct hourprice {
-  float price;
+  price_t price;
   hour_t hour;
 } hourprice_t;
 
 hour_t lastHandledHour = 0;
+price_t averagePrice = 25;
 
 const int MAX_PRICES = 50;
 hourprice_t hourlyPrices[MAX_PRICES];
@@ -60,6 +63,38 @@ hour_t parseIsoDateTime(String datetime) {
 
 hour_t getCurrentHour() {
   return timeClient.getEpochTime() / 3600;
+}
+
+price_t getCurrentPrice() {
+  hour_t currentHour = getCurrentHour();
+  for (int i = 0; i < MAX_PRICES; i++) {
+    if (hourlyPrices[i].hour == currentHour) {
+      return hourlyPrices[i].price;
+    }
+  }
+  return INVALID_PRICE;
+}
+
+price_t getLowestPrice() {
+  price_t min = INT_MAX;
+  hour_t currentHour = getCurrentHour();
+  for (int i = 0; i < MAX_PRICES; i++) {
+    if (hourlyPrices[i].hour != 0 && hourlyPrices[i].price < min) {
+      min = hourlyPrices[i].price;
+    }
+  }
+  return min;
+}
+
+price_t getHighestPrice() {
+  price_t max = INT_MIN;
+  hour_t currentHour = getCurrentHour();
+  for (int i = 0; i < MAX_PRICES; i++) {
+    if (hourlyPrices[i].hour != 0 && hourlyPrices[i].price > max) {
+      max = hourlyPrices[i].price;
+    }
+  }
+  return max;
 }
 
 String formatTimeForApi(time_t epochTime) {
@@ -109,9 +144,9 @@ void fetchEnergyPrices() {
     DeserializationError error = deserializeJson(doc, http.getString());
 
     if (!error) {
-      // Initialize array with NAN before filling
+      // Initialize array before filling
       for (int i = 0; i < MAX_PRICES; i++) {
-        hourlyPrices[i].price = NAN;
+        hourlyPrices[i].price = INVALID_PRICE;
         hourlyPrices[i].hour = 0;
       }
 
@@ -119,7 +154,7 @@ void fetchEnergyPrices() {
       JsonArray dataArray = doc["data"].as<JsonArray>();
       for (JsonObject dataPoint : dataArray) {
         hourlyPrices[index].hour = parseIsoDateTime(dataPoint["date"]);
-        hourlyPrices[index].price = dataPoint["values"]["marktprijs"].as<float>();
+        hourlyPrices[index].price = dataPoint["values"]["allInPrijs"].as<price_t>();
 
         Serial.print("EUR");
         Serial.print(hourlyPrices[index].price);
@@ -205,16 +240,41 @@ void expensiveHourStarted() {
 
 void onNewHour(hour_t currentHour) {
   // call fetchEnergyPrices if necessary
+  if (timeClient.getHours() == 18 || countFutureHours() < 6) {
+    fetchEnergyPrices();
+  }
+
+  price_t currentPrice = getCurrentPrice();
+  
   // call cheapHourStarted on cheapest hour
+  if (currentPrice < averagePrice && currentPrice == getLowestPrice()) {
+    cheapHourStarted();
+  }
+
   // call expensiveHourStarted on most expensive hour
+  if (currentPrice > averagePrice && currentPrice == getHighestPrice()) {
+    expensiveHourStarted();
+  }
 }
 
 void handleInfoConnection(WiFiClient client) {
+  client.print("timeClient.getFormattedTime(): ");
+  client.println(timeClient.getFormattedTime());
+
   client.print("lastHandledHour: ");
   client.println(lastHandledHour);
 
   client.print("getCurrentHour: ");
   client.println(getCurrentHour());
+
+  client.print("getCurrentPrice: ");
+  client.println(getCurrentPrice());
+
+  client.print("getLowestPrice: ");
+  client.println(getLowestPrice());
+
+  client.print("getHighestPrice: ");
+  client.println(getHighestPrice());
 
   client.print("MAX_PRICES: ");
   client.println(MAX_PRICES);
@@ -224,6 +284,9 @@ void handleInfoConnection(WiFiClient client) {
 
   client.print("countFutureHours: ");
   client.println(countFutureHours());
+
+  client.print("averagePrice: ");
+  client.println(averagePrice);
 
   client.println("hourlyPrices: ");
   for (int i = 0; i < MAX_PRICES; i++) {
@@ -239,16 +302,21 @@ void loop() {
   timeClient.update();
   MDNS.update();
 
-  hour_t currentHour = getCurrentHour();
-  if (currentHour != lastHandledHour) {
-    lastHandledHour = currentHour;
-    onNewHour(currentHour);
-  }
-
   if (infoServer.hasClient()) {
     WiFiClient infoClient = infoServer.accept();
     handleInfoConnection(infoClient);
     infoClient.stop();
+  }
+
+  // Sanity check for correct time
+  if (timeClient.getEpochTime() < 1768000000) {
+    return;
+  }
+
+  hour_t currentHour = getCurrentHour();
+  if (currentHour != lastHandledHour) {
+    lastHandledHour = currentHour;
+    onNewHour(currentHour);
   }
 
   delay(1000);
