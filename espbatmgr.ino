@@ -36,8 +36,10 @@ typedef struct hourprice {
 
 hour_t lastHandledHour = 0;
 price_t averagePrice = 25;
+bool inCheapHour = false;
+bool inExpensiveHour = false;
 
-const int MAX_PRICES = 50;
+const int MAX_PRICES = 72;
 hourprice_t hourlyPrices[MAX_PRICES];
 
 int months_lengths[2][12] = {
@@ -95,6 +97,18 @@ price_t getHighestPrice() {
     }
   }
   return max;
+}
+
+void updateAveragePrice() {
+  price_t sum = 0;
+  int count = 0;
+  for (int i = 0; i < MAX_PRICES; i++) {
+    if (hourlyPrices[i].hour != 0 && hourlyPrices[i].price != INVALID_PRICE) {
+      sum += hourlyPrices[i].price;
+      count += 1;
+    }
+  }
+  averagePrice = (10 * averagePrice + sum) / (10 + count);
 }
 
 String formatTimeForApi(time_t epochTime) {
@@ -156,7 +170,7 @@ void fetchEnergyPrices() {
         hourlyPrices[index].hour = parseIsoDateTime(dataPoint["date"]);
         hourlyPrices[index].price = dataPoint["values"]["allInPrijs"].as<price_t>();
 
-        Serial.print("EUR");
+        Serial.print("€0.");
         Serial.print(hourlyPrices[index].price);
         Serial.print(" for hour ");
         Serial.println(hourlyPrices[index].hour);
@@ -164,7 +178,11 @@ void fetchEnergyPrices() {
         index += 1;
         if (index >= MAX_PRICES) break;
       }
-      Serial.println("Price array updated for the next 48 hours.");
+      Serial.print("Price array updated for the next ");
+      Serial.print(index);
+      Serial.println(" hours.");
+
+      updateAveragePrice();
     }
   }
   http.end();
@@ -215,8 +233,6 @@ void setup() {
     digitalWrite(LED_PIN, LED_OFF);
     Serial.print(".");
   }
-
-  // fetchEnergyPrices();
 }
 
 float measureVoltage() {
@@ -231,6 +247,9 @@ float measureVoltage() {
 void cheapHourStarted() {
   // digitalWrite(RELAIS_PIN, RELAIS_ON);
   // float voltage = measureVoltage();
+}
+
+void cheapHourEnded() {
   // digitalWrite(RELAIS_PIN, RELAIS_OFF);
 }
 
@@ -238,8 +257,11 @@ void expensiveHourStarted() {
   // discharge batteries
 }
 
+void expensiveHourEnded() {
+  // stop discharging batteries
+}
+
 void onNewHour(hour_t currentHour) {
-  // call fetchEnergyPrices if necessary
   if (timeClient.getHours() == 18 || countFutureHours() < 6) {
     fetchEnergyPrices();
   }
@@ -248,12 +270,24 @@ void onNewHour(hour_t currentHour) {
   
   // call cheapHourStarted on cheapest hour
   if (currentPrice < averagePrice && currentPrice == getLowestPrice()) {
-    cheapHourStarted();
+    if (!inCheapHour) {
+      inCheapHour = true;
+      cheapHourStarted();
+    }
+  } else if (inCheapHour) {
+    inCheapHour = false;
+    cheapHourEnded();
   }
 
   // call expensiveHourStarted on most expensive hour
   if (currentPrice > averagePrice && currentPrice == getHighestPrice()) {
-    expensiveHourStarted();
+    if (!inExpensiveHour) {
+      inExpensiveHour = true;
+      expensiveHourStarted();
+    }
+  } else if (inExpensiveHour) {
+    inExpensiveHour = false;
+    expensiveHourEnded();
   }
 }
 
@@ -275,6 +309,12 @@ void handleInfoConnection(WiFiClient client) {
 
   client.print("getHighestPrice: ");
   client.println(getHighestPrice());
+
+  client.print("inCheapHour: ");
+  client.println(inCheapHour);
+
+  client.print("inExpensiveHour: ");
+  client.println(inExpensiveHour);
 
   client.print("MAX_PRICES: ");
   client.println(MAX_PRICES);
