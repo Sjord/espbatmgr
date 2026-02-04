@@ -1,24 +1,13 @@
-#include <ESP8266WiFi.h>
+#include <WiFi.h>
 #include <WiFiUdp.h>
+#include <WiFiClientSecure.h>
 #include <NTPClient.h>
-#include <ESP8266HTTPClient.h>
-#include <ESP8266mDNS.h>
+#include <HTTPClient.h>
+#include <ESPmDNS.h>
 #include <ArduinoJson.h>
 #include <math.h>
 #include <time.h>
-#include "wificreds.h"
-
-const int RELAIS_PIN = D1; // green on D1, blue on GND, purple on VV
-const int RELAIS_ON = LOW;
-const int RELAIS_OFF = HIGH;
-
-const int LED_PIN = D4; // built-in LED, on when LOW and off when HIGH
-const int LED_ON = LOW;
-const int LED_OFF = HIGH;
-
-const int MEASUREMENT_PIN = A0; // voltage measurement
-
-const char* anwbApiUrl = "https://api.anwb.nl/energy/energy-services/v2/tarieven/electricity?interval=HOUR";
+#include "Config.h"
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
@@ -39,7 +28,6 @@ price_t averagePrice = 25;
 bool inCheapHour = false;
 bool inExpensiveHour = false;
 
-const int MAX_PRICES = 72;
 hourprice_t hourlyPrices[MAX_PRICES];
 
 int months_lengths[2][12] = {
@@ -143,7 +131,7 @@ void fetchEnergyPrices() {
   // 2. Prepare API Request (Fetching 48 hours of data)
   String startDate = formatTimeForApi(startOfCurrentHourUtc);
   String endDate = formatTimeForApi(startOfCurrentHourUtc + (48 * 3600));
-  String fullUrl = String(anwbApiUrl) + "&startDate=" + startDate + "&endDate=" + endDate;
+  String fullUrl = String(ANWB_API_URL) + "&startDate=" + startDate + "&endDate=" + endDate;
   Serial.println(fullUrl);
 
   HTTPClient http;
@@ -192,8 +180,8 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LED_OFF);
 
-  pinMode(RELAIS_PIN, OUTPUT);
-  digitalWrite(RELAIS_PIN, RELAIS_OFF);
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, RELAY_OFF);
 
   // Initialize serial communication for debugging
   Serial.begin(115200);
@@ -238,19 +226,19 @@ void setup() {
 float measureVoltage() {
   int rawValue = -120;
   for (int i = 0; i < 10; i++) {
-    rawValue += analogRead(MEASUREMENT_PIN);
+    rawValue += analogRead(VOLTAGE_SENSE_PIN);
     delay(1);
   }
   return rawValue * 0.00233;
 }
 
 void cheapHourStarted() {
-  // digitalWrite(RELAIS_PIN, RELAIS_ON);
+  // digitalWrite(RELAY_PIN, RELAY_ON);
   // float voltage = measureVoltage();
 }
 
 void cheapHourEnded() {
-  // digitalWrite(RELAIS_PIN, RELAIS_OFF);
+  // digitalWrite(RELAY_PIN, RELAY_OFF);
 }
 
 void expensiveHourStarted() {
@@ -340,7 +328,6 @@ void handleInfoConnection(WiFiClient client) {
 
 void loop() {
   timeClient.update();
-  MDNS.update();
 
   if (infoServer.hasClient()) {
     WiFiClient infoClient = infoServer.accept();
