@@ -7,6 +7,7 @@
 #include <time.h>
 #include "Config.h"
 #include "Prices.h"
+#include "Charging.h"
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
@@ -22,11 +23,13 @@ hour_t getCurrentHour() {
 }
 
 void setup() {
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LED_OFF);
+  setupCharging();
 
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, RELAY_OFF);
+  // Turn output drivers off by setting all signals high
+  for (int i = 0; i < NUM_CHANNELS; i++) {
+    ledcAttach(PWM_PINS[i], PWM_FREQ, PWM_RESOLUTION);
+    ledcWrite(PWM_PINS[i], 255); // Remember: 255 = OFF for our optos
+  }
 
   // Initialize serial communication for debugging
   Serial.begin(115200);
@@ -35,10 +38,11 @@ void setup() {
   Serial.print("Connecting to ");
   Serial.println(ssid);
 
-  // Set the ESP8266 to be a Wi-Fi station (client)
+  // Set the ESP to be a Wi-Fi station (client)
   WiFi.begin(ssid, password);
 
   // Wait for the connection to establish
+  Serial.println("Waiting for WiFi...");
   while (WiFi.status() != WL_CONNECTED) {
     delay(100);
     digitalWrite(LED_PIN, LED_ON);
@@ -46,8 +50,6 @@ void setup() {
     digitalWrite(LED_PIN, LED_OFF);
     Serial.print(".");
   }
-
-  Serial.println("WiFi connected successfully!");
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
 
@@ -59,6 +61,7 @@ void setup() {
 
   MDNS.begin("espbatmgr");
 
+  Serial.println("Waiting for NTP...");
   while (!timeClient.isTimeSet()) {
     delay(50);
     digitalWrite(LED_PIN, LED_ON);
@@ -66,6 +69,7 @@ void setup() {
     digitalWrite(LED_PIN, LED_OFF);
     Serial.print(".");
   }
+  Serial.println("setup() finished.");
 }
 
 float measureVoltage() {
@@ -78,12 +82,11 @@ float measureVoltage() {
 }
 
 void cheapHourStarted() {
-  // digitalWrite(RELAY_PIN, RELAY_ON);
-  // float voltage = measureVoltage();
+  startCharging();
 }
 
 void cheapHourEnded() {
-  // digitalWrite(RELAY_PIN, RELAY_OFF);
+  stopCharging();
 }
 
 void expensiveHourStarted() {
@@ -142,6 +145,7 @@ void handleInfoConnection(WiFiClient client) {
   client.println(measureVoltage());
 
   printPricesDebugInfo(client);
+  printChargingDebugInfo(client);
 }
 
 void loop() {
@@ -157,6 +161,8 @@ void loop() {
   if (timeClient.getEpochTime() < 1768000000) {
     return;
   }
+
+  updateCharging(timeClient.getMinutes());
 
   hour_t currentHour = getCurrentHour();
   if (currentHour != lastHandledHour) {

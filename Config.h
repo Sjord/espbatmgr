@@ -12,14 +12,15 @@ inline const char* ANWB_API_URL = "https://api.anwb.nl/energy/energy-services/v2
 // ==========================================
 // 2. Pin Definitions (ESP32 Classic / S3)
 // ==========================================
+inline const int NUM_CHANNELS = 4;
 
 // --- Charging Logic ---
-inline const int RELAY_PIN       = 12; // Master relay for the charger
-inline const int MOSFET_PINS[4]  = {13, 14, 27, 26}; // Individual battery charging gates
+inline const int RELAY_PIN       = 12; // Master relay for the charger = green, blue = GND, purple = 5V
+inline const int MOSFET_PINS[NUM_CHANNELS]  = {13, 14, 27, 26}; // Individual battery charging gates
 
 // --- Discharging Logic (PWM) ---
 // Using pins compatible with LEDC (Hardware PWM)
-inline const int PWM_PINS[4]     = {32, 33, 25, 18}; 
+inline const int PWM_PINS[NUM_CHANNELS]     = {32, 33, 25, 18}; 
 
 // --- Sensors & Indicators ---
 inline const int VOLTAGE_SENSE_PIN = 34; // ADC1_CH6 (Analog Input)
