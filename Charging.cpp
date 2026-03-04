@@ -55,3 +55,14 @@ void printChargingDebugInfo(Print &client) {
   client.print("chargingBattery: ");
   client.println(chargingBattery);
 }
+
+void testCharging() {
+  digitalWrite(RELAY_PIN, RELAY_ON);
+  for (int i = 0; i < NUM_CHANNELS; i++) {
+    digitalWrite(MOSFET_PINS[i], MOSFET_ON);
+    delay(500);
+    digitalWrite(MOSFET_PINS[i], MOSFET_OFF);
+    delay(50);
+  }
+  digitalWrite(RELAY_PIN, RELAY_OFF);
+}

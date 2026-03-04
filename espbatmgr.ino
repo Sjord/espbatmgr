@@ -8,6 +8,7 @@
 #include "Config.h"
 #include "Prices.h"
 #include "Charging.h"
+#include "Discharge.h"
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
@@ -23,13 +24,10 @@ hour_t getCurrentHour() {
 }
 
 void setup() {
-  setupCharging();
+  pinMode(LED_PIN, OUTPUT);
 
-  // Turn output drivers off by setting all signals high
-  for (int i = 0; i < NUM_CHANNELS; i++) {
-    ledcAttach(PWM_PINS[i], PWM_FREQ, PWM_RESOLUTION);
-    ledcWrite(PWM_PINS[i], 255); // Remember: 255 = OFF for our optos
-  }
+  setupCharging();
+  setupDischarge();
 
   // Initialize serial communication for debugging
   Serial.begin(115200);
@@ -90,11 +88,11 @@ void cheapHourEnded() {
 }
 
 void expensiveHourStarted() {
-  // discharge batteries
+  startDischarge();
 }
 
 void expensiveHourEnded() {
-  // stop discharging batteries
+  stopDischarge();
 }
 
 void onNewHour(hour_t currentHour) {
@@ -146,6 +144,14 @@ void handleInfoConnection(WiFiClient client) {
 
   printPricesDebugInfo(client);
   printChargingDebugInfo(client);
+  printDischargeDebugInfo(client);
+}
+
+void test() {
+  digitalWrite(LED_PIN, LED_ON);
+  testCharging();
+  testDischarge();
+  digitalWrite(LED_PIN, LED_OFF);
 }
 
 void loop() {
@@ -155,6 +161,7 @@ void loop() {
     WiFiClient infoClient = infoServer.accept();
     handleInfoConnection(infoClient);
     infoClient.stop();
+    test();
   }
 
   // Sanity check for correct time
@@ -163,6 +170,7 @@ void loop() {
   }
 
   updateCharging(timeClient.getMinutes());
+  updateDischarge();
 
   hour_t currentHour = getCurrentHour();
   if (currentHour != lastHandledHour) {
@@ -170,8 +178,8 @@ void loop() {
     onNewHour(currentHour);
   }
 
-  delay(1000);
+  delay(900);
   digitalWrite(LED_PIN, LED_ON);
-  delay(1000);
+  delay(100);
   digitalWrite(LED_PIN, LED_OFF);
 }

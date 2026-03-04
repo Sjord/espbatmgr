@@ -15,12 +15,13 @@ inline const char* ANWB_API_URL = "https://api.anwb.nl/energy/energy-services/v2
 inline const int NUM_CHANNELS = 4;
 
 // --- Charging Logic ---
-inline const int RELAY_PIN       = 12; // Master relay for the charger = green, blue = GND, purple = 5V
+inline const int RELAY_PIN       = 4; // Master relay for the charger = green, blue = GND, purple = 5V
 inline const int MOSFET_PINS[NUM_CHANNELS]  = {13, 14, 27, 26}; // Individual battery charging gates
 
 // --- Discharging Logic (PWM) ---
 // Using pins compatible with LEDC (Hardware PWM)
-inline const int PWM_PINS[NUM_CHANNELS]     = {32, 33, 25, 18}; 
+// inline const int PWM_PINS[NUM_CHANNELS]     = {32, 33, 25, 18};
+inline const int DISCHARGE_PIN = 32;
 
 // --- Sensors & Indicators ---
 inline const int VOLTAGE_SENSE_PIN = 34; // ADC1_CH6 (Analog Input)
@@ -35,8 +36,11 @@ inline const int RELAY_OFF = HIGH;
 inline const int MOSFET_ON  = HIGH; // MOSFETs usually turn on with 3.3V
 inline const int MOSFET_OFF = LOW;
 
-inline const int LED_ON  = LOW;
-inline const int LED_OFF = HIGH;
+inline const int LED_ON  = HIGH;
+inline const int LED_OFF = LOW;
+
+inline const int DISCHARGE_ON  = LOW;
+inline const int DISCHARGE_OFF = HIGH;
 
 // NOTE: Because of the optocoupler, PWM logic is INVERTED.
 // 255 (or 100%) duty cycle = Opto LED ON = DIM Pin pulled to Ground = PT4115 OFF.

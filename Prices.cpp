@@ -135,6 +135,7 @@ void fetchEnergyPrices(hour_t currentHour) {
         Serial.print(hourlyPrices[index].price);
         Serial.print(" for hour ");
         Serial.println(hourlyPrices[index].hour);
+        yield();
 
         index += 1;
         if (index >= MAX_PRICES) break;
@@ -164,10 +165,7 @@ void printPricesDebugInfo(Print &client) {
 
   client.println("hourlyPrices: ");
   for (int i = 0; i < MAX_PRICES; i++) {
-    client.print(i);
-    client.print(" ");
-    client.print(hourlyPrices[i].hour);
-    client.print(" ");
-    client.println(hourlyPrices[i].price);
+    client.printf("%d %d %d\n", i, hourlyPrices[i].hour, hourlyPrices[i].price);
+    yield(); 
   }
 }
