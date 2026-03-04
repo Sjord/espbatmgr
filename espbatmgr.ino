@@ -1,7 +1,6 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <NTPClient.h>
-#include <HTTPClient.h>
 #include <ESPmDNS.h>
 #include <math.h>
 #include <time.h>
@@ -23,6 +22,43 @@ hour_t getCurrentHour() {
   return timeClient.getEpochTime() / 3600;
 }
 
+void waitForWiFi() {
+  // Wait for the connection to establish
+  Serial.println("Waiting for WiFi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(100);
+    digitalWrite(LED_PIN, LED_ON);
+    delay(100);
+    digitalWrite(LED_PIN, LED_OFF);
+    Serial.print(".");
+  }
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void waitForNtp() {
+  Serial.println("Waiting for NTP...");
+  while (!timeClient.isTimeSet()) {
+    timeClient.update();
+    delay(50);
+    digitalWrite(LED_PIN, LED_ON);
+    delay(50);
+    digitalWrite(LED_PIN, LED_OFF);
+    Serial.print(".");
+  }
+}
+
+void ensureWiFi() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi lost. Reconnecting...");
+    WiFi.disconnect();
+    WiFi.begin(ssid, password);
+
+    waitForWiFi();
+    waitForNtp();
+  }
+}
+
 void setup() {
   pinMode(LED_PIN, OUTPUT);
 
@@ -38,35 +74,16 @@ void setup() {
 
   // Set the ESP to be a Wi-Fi station (client)
   WiFi.begin(ssid, password);
-
-  // Wait for the connection to establish
-  Serial.println("Waiting for WiFi...");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(100);
-    digitalWrite(LED_PIN, LED_ON);
-    delay(100);
-    digitalWrite(LED_PIN, LED_OFF);
-    Serial.print(".");
-  }
-  Serial.print("IP Address: ");
-  Serial.println(WiFi.localIP());
+  waitForWiFi();
 
   infoServer.begin();
   infoServer.setNoDelay(true);
 
   timeClient.begin();
-  timeClient.update();
+  waitForNtp();
 
   MDNS.begin("espbatmgr");
 
-  Serial.println("Waiting for NTP...");
-  while (!timeClient.isTimeSet()) {
-    delay(50);
-    digitalWrite(LED_PIN, LED_ON);
-    delay(50);
-    digitalWrite(LED_PIN, LED_OFF);
-    Serial.print(".");
-  }
   Serial.println("setup() finished.");
 }
 
@@ -96,6 +113,8 @@ void expensiveHourEnded() {
 }
 
 void onNewHour(hour_t currentHour) {
+  ensureWiFi();
+
   if (timeClient.getHours() == 18 || countFutureHours(currentHour) < 6) {
     fetchEnergyPrices(currentHour);
   }
@@ -166,6 +185,7 @@ void loop() {
 
   // Sanity check for correct time
   if (timeClient.getEpochTime() < 1768000000) {
+    ensureWiFi();
     return;
   }
 
@@ -178,8 +198,5 @@ void loop() {
     onNewHour(currentHour);
   }
 
-  delay(900);
-  digitalWrite(LED_PIN, LED_ON);
-  delay(100);
-  digitalWrite(LED_PIN, LED_OFF);
+  digitalWrite(LED_PIN, 0 == ((millis() / 10) % 100));
 }
